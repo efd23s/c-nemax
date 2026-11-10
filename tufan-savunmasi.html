@@ -1,0 +1,863 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tufan Savunması — 3D Kule Savunma</title>
+<style>
+  :root{
+    --ink:#2f3b4a;
+    --grass:#7fae7f;
+    --grass2:#86b486;
+    --wood:#c8a26a;
+    --gold:#e8c36a;
+    --danger:#d07a5f;
+    --ice:#9ed3e3;
+    --paper:#f4f0e6;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;overflow:hidden;font-family:'Segoe UI','Georgia',system-ui,sans-serif;color:var(--ink);background:#dbe4d8;}
+  #game{position:relative;width:100vw;height:100vh;}
+  canvas#gl{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:grab;}
+  canvas#gl.grabbing{cursor:grabbing;}
+
+  /* HUD */
+  #hud{position:absolute;top:12px;left:12px;right:12px;display:flex;justify-content:space-between;align-items:flex-start;pointer-events:none;z-index:5;}
+  #coreInfo{background:rgba(255,255,255,.7);backdrop-filter:blur(6px);border:1px solid rgba(47,59,74,.15);border-radius:14px;padding:10px 14px;}
+  #coreInfo .big{font-size:22px;font-weight:800;}
+  #coreInfo .lbl{font-size:11px;opacity:.65;text-transform:uppercase;letter-spacing:1px;}
+  #meta{text-align:right;background:rgba(255,255,255,.7);backdrop-filter:blur(6px);border:1px solid rgba(47,59,74,.15);border-radius:14px;padding:10px 14px;}
+  #meta .row{font-size:13px;margin:2px 0;}
+
+  /* wave / status */
+  #statusBar{position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:5;
+    background:rgba(255,255,255,.72);backdrop-filter:blur(6px);border:1px solid rgba(47,59,74,.15);
+    border-radius:14px;padding:8px 18px;text-align:center;pointer-events:none;}
+  #statusBar .w{font-size:14px;font-weight:700;}
+  #statusBar .hint{font-size:11px;opacity:.7;font-style:italic;}
+
+  /* shop */
+  #shop{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);z-index:6;display:flex;gap:10px;
+    background:rgba(255,255,255,.74);backdrop-filter:blur(8px);border:1px solid rgba(47,59,74,.16);border-radius:18px;padding:12px;}
+  .shopCard{pointer-events:auto;cursor:pointer;border:1px solid rgba(47,59,74,.14);border-radius:12px;padding:8px 10px;
+    text-align:center;min-width:86px;background:rgba(255,255,255,.5);transition:.15s;}
+  .shopCard:hover{transform:translateY(-3px);background:#fff;box-shadow:0 6px 14px rgba(0,0,0,.12);}
+  .shopCard .ico{font-size:26px;height:34px;line-height:34px;}
+  .shopCard .nm{font-size:12px;font-weight:700;}
+  .shopCard .pr{font-size:11px;color:#6b7a55;}
+  .shopCard.disabled{opacity:.45;pointer-events:none;}
+  .shopCard.selected{border-color:var(--gold);box-shadow:0 0 0 2px var(--gold);}
+
+  /* messages / toasts */
+  #toast{position:absolute;left:50%;top:70px;transform:translateX(-50%);z-index:8;pointer-events:none;
+    background:rgba(255,255,255,.92);border:1px solid rgba(47,59,74,.2);border-radius:12px;padding:8px 16px;font-size:14px;
+    opacity:0;transition:.4s;}
+  #toast.show{opacity:1;}
+
+  /* overlays */
+  .overlay{position:absolute;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;
+    background:rgba(220,228,216,.6);backdrop-filter:blur(10px);}
+  .card{background:rgba(253,250,242,.97);border-radius:24px;padding:34px 40px;max-width:600px;width:92vw;
+    box-shadow:0 24px 70px rgba(30,50,60,.35);border:1px solid rgba(47,59,74,.12);text-align:center;}
+  .card h1{font-size:32px;margin:0 0 6px;}
+  .card .tag{font-style:italic;opacity:.6;margin-bottom:16px;}
+  .card p{font-size:14.5px;line-height:1.6;margin:8px 0;}
+  .towerLegend{display:flex;justify-content:center;gap:14px;margin:18px 0;flex-wrap:wrap;}
+  .legItem{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:12px;}
+  .legItem .bx{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px;border:1px solid rgba(0,0,0,.12);}
+  .btn{pointer-events:auto;cursor:pointer;border:none;border-radius:800px;padding:12px 30px;font-size:16px;font-weight:700;
+    background:var(--grass);color:#fff;transition:.15s;}
+  .btn:hover{background:#6f9e6f;}
+  .btn.amber{background:var(--gold);color:#4a3f22;} .btn.amber:hover{background:#dcb04f;}
+  .hidden{display:none;}
+  .vignette{position:absolute;inset:0;pointer-events:none;z-index:4;
+    box-shadow:inset 0 0 180px rgba(30,50,60,.35);}
+</style>
+</head>
+<body>
+<div id="game">
+  <canvas id="gl"></canvas>
+  <div class="vignette"></div>
+
+  <div id="hud">
+    <div id="coreInfo">
+      <div class="lbl">Kristalin Canı</div>
+      <div class="big" id="coreLife">💎 100</div>
+    </div>
+    <div id="statusBar">
+      <div class="w" id="waveText">Dalga 0/10 — Başlamaya hazır</div>
+      <div class="hint">Tura aşağıdaki butondan başla</div>
+    </div>
+    <div id="meta">
+      <div class="row">🪙 <b id="gold">150</b></div>
+      <div class="row">💀 <span id="kills">0</span></div>
+    </div>
+  </div>
+
+  <div id="shop"></div>
+
+  <div id="toast"></div>
+
+  <!-- Start -->
+  <div class="overlay" id="startScreen">
+    <div class="card">
+      <h1>Tufan Savunması</h1>
+      <div class="tag">3D Kule Savunma — kristali yoldan gelen tufandan koru.</div>
+      <p>Merkezdeki <b>Kristal</b>'e giden patikada botlar ilerler. Yol kenarındaki
+      <b>kule yuvalarına</b> kule inşa ederek onları durdur.</p>
+      <div class="towerLegend">
+        <div class="legItem"><div class="bx" style="background:#f7e1a8">🏹</div> Erdemli Okçu<br><small>hızlı, tek hedef</small></div>
+        <div class="legItem"><div class="bx" style="background:#f4c7a8">🧨</div> Topçu Kulesi<br><small>yavaş, alan hasarı</small></div>
+        <div class="legItem"><div class="bx" style="background:#cdeef7">❄️</div> Buz Kulesi<br><small>yavaşlatır</small></div>
+      </div>
+      <p><b>Kamera:</b> sürükle = döndür · tekerlek = yaklaş/uzaklaş.
+      <b>İnşa:</b> kule kartına tıkla, sonra yoldaki yeşil yuvaya tıkla. Kartlara tekrar tıklayarak kuleyi yükselt.</p>
+      <button class="btn" id="btnStart">Savunmayı Kur</button>
+    </div>
+  </div>
+
+  <!-- Win -->
+  <div class="overlay hidden" id="winScreen">
+    <div class="card">
+      <h1>Zafer! 🏆</h1>
+      <div class="tag">Tüm dalgalar püskürtüldü.</div>
+      <p id="winText"></p>
+      <button class="btn amber" id="btnRestart">Yeniden Oyna</button>
+    </div>
+  </div>
+
+  <!-- Lose -->
+  <div class="overlay hidden" id="loseScreen">
+    <div class="card">
+      <h1>Kristal Kırıldı 💔</h1>
+      <div class="tag">Tufan kristalini ele geçirdi.</div>
+      <p id="loseText"></p>
+      <button class="btn amber" id="btnRestartLose">Tekrar Dene</button>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* =========================================================
+   TUFAN SAVUNMASI — 3D Kule Savunma (vanilla WebGL)
+   ========================================================= */
+
+/* ---------------- KÜÇÜK MATEMATİK KÜTÜPHANESİ ---------------- */
+const M4 = {
+  identity(){ return [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]; },
+  multiply(a,b){
+    const o=new Array(16);
+    for(let c=0;c<4;c++)for(let r=0;r<4;r++){
+      o[c*4+r]=a[r]*b[c*4]+a[4+r]*b[c*4+1]+a[8+r]*b[c*4+2]+a[12+r]*b[c*4+3];
+    }
+    return o;
+  },
+  translate(m,x,y,z){
+    const t=M4.identity(); t[12]=x;t[13]=y;t[14]=z; return M4.multiply(m,t);
+  },
+  scale(m,x,y,z){
+    const s=M4.identity(); s[0]=x;s[5]=y;s[10]=z; return M4.multiply(m,s);
+  },
+  rotateX(m,a){const c=Math.cos(a),s=Math.sin(a);const r=M4.identity();r[5]=c;r[6]=s;r[9]=-s;r[10]=c;return M4.multiply(m,r);},
+  rotateY(m,a){const c=Math.cos(a),s=Math.sin(a);const r=M4.identity();r[0]=c;r[2]=-s;r[8]=s;r[10]=c;return M4.multiply(m,r);},
+  rotateZ(m,a){const c=Math.cos(a),s=Math.sin(a);const r=M4.identity();r[0]=c;r[1]=s;r[4]=-s;r[5]=c;return M4.multiply(m,r);},
+  perspective(fov,aspect,near,far){
+    const f=1/Math.tan(fov/2), nf=1/(near-far);
+    return [f/aspect,0,0,0, 0,f,0,0, 0,0,(far+near)*nf,-1, 0,0,2*far*near*nf,0];
+  },
+  lookAt(eye,target,up){
+    let zx=eye[0]-target[0],zy=eye[1]-target[1],zz=eye[2]-target[2];
+    let l=Math.hypot(zx,zy,zz); zx/=l;zy/=l;zz/=l;
+    let ux=up[0],uy=up[1],uz=up[2];
+    let cx=uy*zz-uz*zy, cy=uz*zx-ux*zz, cz=ux*zy-uy*zx;
+    l=Math.hypot(cx,cy,cz); cx/=l;cy/=l;cz/=l;
+    const eyex=eye[0],eyey=eye[1],eyez=eye[2];
+    const b=[cx,cy,cz, 0,  ux,uy,uz,0,  zx,zy,zz,0,  0,0,0,1];
+    const e=M4.translate(M4.identity(),-eyex,-eyey,-eyez);
+    return M4.multiply(b,e);
+  },
+  transform(m,v){
+    return [
+      m[0]*v[0]+m[4]*v[1]+m[8]*v[2]+m[12]*v[3],
+      m[1]*v[0]+m[5]*v[1]+m[9]*v[2]+m[13]*v[3],
+      m[2]*v[0]+m[6]*v[1]+m[10]*v[2]+m[14]*v[3],
+      m[3]*v[0]+m[7]*v[1]+m[11]*v[2]+m[15]*v[3],
+    ];
+  },
+};
+
+/* ---------------- VERİ: YOL, KULE YUVALARI ---------------- */
+// Patika: kristale giden yol noktaları (x,z düzlemi), dünya ölçeğinde
+const PATH = [
+  {x:-9, z:-5},
+  {x:-9, z:-1},
+  {x:-4, z:-1},
+  {x:-4, z: 3},
+  {x: 1, z: 3},
+  {x: 1, z:-1},
+  {x: 6, z:-1},
+  {x: 6, z: 3},
+  {x:10, z: 3},
+];
+const GRID = { n:20, half: 7 };
+const GROUND_Y = 0;
+
+// Kule yuvaları (yol şeridinin yanlarına yerleştirilmiş)
+function towerSpots(){
+  const spots=[];
+  const offs=1.4;
+  for(let i=0;i<PATH.length-1;i++){
+    const a=PATH[i], b=PATH[i+1];
+    const dx=b.x-a.x, dz=b.z-a.z;
+    const len=Math.hypot(dx,dz); if(len<0.01)continue;
+    const nx=-dz/len, nz=dx/len; // normal (dik)
+    // iki yan
+    for(const s of [-1,1]){
+      const cnt=(i===(PATH.length-2))?1:1;
+      spots.push({x:(a.x+b.x)/2 + nx*offs*s, z:(a.z+b.z)/2 + nz*offs*s, side:s, seg:i, tower:null});
+      void cnt;
+    }
+  }
+  return spots;
+}
+let SPOTS = towerSpots();
+
+/* ---------------- OYUN DURUMU ---------------- */
+let state;
+const TOWERS = {
+  archer:{ name:'Okçu', ico:'🏹', cost:60, dmg:12, rate:1.6, range:3.4, color:[0.96,0.85,0.55], upgradeCost:50, dmgUp:14 },
+  cannon:{ name:'Top', ico:'🧨', cost:85, dmg:30, rate:0.7, range:3.0, splash:1.2, color:[0.9,0.6,0.4], upgradeCost:70, dmgUp:25 },
+  frost:{  name:'Buz', ico:'❄️', cost:55, dmg:0,  rate:1.0, range:2.8, slow:0.55, color:[0.6,0.8,0.9], upgradeCost:45, slowUp:0.35 },
+};
+
+function newState(){
+  const walls=[];
+  for(const r of [0.6,1.3,2.0,2.7,3.4]){ // kristal halkaları
+    walls.push({r, hp:120, max:120});
+  }
+  return {
+    core:{hp:100,max:100},
+    gold:150,
+    kills:0,
+    wave:0,
+    waveActive:false,
+    totalWaves:10,
+    enemies:[],
+    projectiles:[],
+    effects:[],
+    selected:null,      // seçili kule tipi ('archer'|'cannon'|'frost')
+    spots:SPOTS,
+    walls,
+    time:0,
+    spawnQueue:null,
+    spawnTimer:0,
+    interWaveTimer:0,
+    gameOver:false,
+    won:false,
+  };
+}
+state=newState();
+const KILL_REWARD=8, LEAK_PENALTY=8, START_GOLD=150;
+
+/* ---------------- WEBGL KURULUMU ---------------- */
+const canvas=document.getElementById('gl');
+const gl=canvas.getContext('webgl',{antialias:true})||canvas.getContext('experimental-webgl');
+if(!gl){ alert('WebGL desteklenmiyor.'); }
+
+function resizeGL(){
+  canvas.width=window.innerWidth*devicePixelRatio;
+  canvas.height=window.innerHeight*devicePixelRatio;
+  gl.viewport(0,0,canvas.width,canvas.height);
+  gl.canvas.clientW=canvas.width; gl.canvas.clientH=canvas.height;
+}
+resizeGL();
+window.addEventListener('resize',resizeGL);
+
+const vertSrc=`
+attribute vec3 aPos;
+attribute vec3 aNor;
+attribute vec4 aCol;
+uniform mat4 uMVP;
+uniform vec3 uLightDir;
+varying vec3 vNor;
+varying vec4 vCol;
+void main(){
+  gl_Position=uMVP*vec4(aPos,1.0);
+  vNor=aNor;
+  vCol=aCol;
+}
+`;
+const fragSrc=`
+precision mediump float;
+varying vec3 vNor;
+varying vec4 vCol;
+uniform vec3 uLightDir;
+void main(){
+  float d=max(dot(normalize(vNor),normalize(uLightDir)),0.0);
+  float amb=0.5;
+  float light=amb+(1.0-amb)*d;
+  gl_FragColor=vec4(vCol.rgb*light,vCol.a);
+}
+`;
+
+function compile(shSrc,type){
+  const s=gl.createShader(type); gl.shaderSource(s,shSrc); gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+const prog=gl.createProgram();
+gl.attachShader(prog,compile(vertSrc,gl.VERTEX_SHADER));
+gl.attachShader(prog,compile(fragSrc,gl.FRAGMENT_SHADER));
+gl.linkProgram(prog);
+if(!gl.getProgramParameter(prog,gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+gl.useProgram(prog);
+
+const loc={ pos:gl.getAttribLocation(prog,'aPos'), nor:gl.getAttribLocation(prog,'aNor'),
+  col:gl.getAttribLocation(prog,'aCol'), mvp:gl.getUniformLocation(prog,'uMVP'),
+  light:gl.getUniformLocation(prog,'uLightDir') };
+gl.enable(gl.DEPTH_TEST);
+gl.enable(gl.BLEND);
+gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
+
+/* ---------------- MESH TABANLI RENDER ---------------- */
+// Her primitive bir fonksiyon: model matrisi ver, gl çiz
+const MAXV=200000;
+let meshVao=null;
+function makeBuffers(){
+  meshVao=gl.createVertexArray();
+}
+// toplanmış tek büyük buffer yerine her çağrıda tepe noktaları kurarız.
+// Basitlik için bir "draw call" başına array kurup draw.
+
+function drawMesh(mvp, positions, normals, colors, indices, mode){
+  const n=positions.length/3;
+  const ab=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,ab);
+  const data=new Float32Array(n*10);
+  for(let i=0;i<n;i++){
+    data[i*10+0]=positions[i*3]; data[i*10+1]=positions[i*3+1]; data[i*10+2]=positions[i*3+2];
+    data[i*10+3]=normals[i*3];   data[i*10+4]=normals[i*3+1];   data[i*10+5]=normals[i*3+2];
+    data[i*10+6]=colors[i*3];    data[i*10+7]=colors[i*3+1];    data[i*10+8]=colors[i*3+2];
+    data[i*10+9]=1;
+  }
+  gl.bufferData(gl.ARRAY_BUFFER,data,gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(loc.pos);gl.vertexAttribPointer(loc.pos,3,gl.FLOAT,false,40,0);
+  gl.enableVertexAttribArray(loc.nor);gl.vertexAttribPointer(loc.nor,3,gl.FLOAT,false,40,12);
+  gl.enableVertexAttribArray(loc.col);gl.vertexAttribPointer(loc.col,4,gl.FLOAT,false,40,24);
+  const ib=gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ib);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint16Array(indices),gl.DYNAMIC_DRAW);
+  gl.uniformMatrix4fv(loc.mvp,false,mvp);
+  gl.drawElements(mode||gl.TRIANGLES,indices.length,gl.UNSIGNED_SHORT,0);
+  gl.deleteBuffer(ab); gl.deleteBuffer(ib);
+}
+function flushDraw(multimatrices, mesh){
+  // toplu çizim: her mesh için birlikte
+  for(const d of mesh.draws){
+    drawMesh(d.matrix, d.positions, d.normals, d.colors, d.indices, d.mode);
+  }
+}
+
+/* Primitive üreticiler: döndürür {positions,normals,colors,indices} */
+function box(w,h,d,rgb){
+  const w2=w/2,h2=h/2,d2=d/2; const p=[],n=[],c=[],idx=[];
+  const faces=[
+    { // +x
+      pts:[[w2,-h2,-d2],[w2,h2,-d2],[w2,h2,d2],[w2,-h2,d2]], n:[1,0,0]
+    },{ // -x
+      pts:[[-w2,-h2,d2],[-w2,h2,d2],[-w2,h2,-d2],[-w2,-h2,-d2]], n:[-1,0,0]
+    },{ // +y
+      pts:[[-w2,h2,-d2],[w2,h2,-d2],[w2,h2,d2],[-w2,h2,d2]], n:[0,1,0]
+    },{ // -y
+      pts:[[-w2,-h2,d2],[w2,-h2,d2],[w2,-h2,-d2],[-w2,-h2,-d2]], n:[0,-1,0]
+    },{ // +z
+      pts:[[-w2,-h2,d2],[-w2,h2,d2],[w2,h2,d2],[w2,-h2,d2]], n:[0,0,1]
+    },{ // -z
+      pts:[[w2,-h2,-d2],[w2,h2,-d2],[-w2,h2,-d2],[-w2,-h2,-d2]], n:[0,0,-1]
+    }
+  ];
+  for(const f of faces){
+    const base=p.length/3;
+    for(const pt of f.pts){ p.push(pt[0],pt[1],pt[2]); n.push(f.n[0],f.n[1],f.n[2]); c.push(rgb[0],rgb[1],rgb[2]); }
+    idx.push(base,base+1,base+2, base,base+2,base+3);
+  }
+  return {positions:p,normals:n,colors:c,indices:idx};
+}
+function prismaticPyramid(baseW,baseD,height,rgb){
+  // dörtgen tabanlı piramit
+  const w2=baseW/2,d2=baseD/2,h=height; const p=[],n=[],c=[],idx=[];
+  const apex=[0,h,0];
+  const corners=[[-w2,0,-d2],[w2,0,-d2],[w2,0,d2],[-w2,0,d2]];
+  // 4 yanal üçgen
+  for(let i=0;i<4;i++){
+    const a=corners[i], b=corners[(i+1)%4];
+    const baseI=p.length/3;
+    p.push(a[0],a[1],a[2]); p.push(b[0],b[1],b[2]); p.push(apex[0],apex[1],apex[2]);
+    for(let j=0;j<3;j++){ n.push(0,1,0); c.push(rgb[0],rgb[1],rgb[2]); }
+    idx.push(baseI,baseI+1,baseI+2);
+  }
+  // alt kapak
+  const b0=p.length/3;
+  for(const co of corners){ p.push(co[0],co[1],co[2]); n.push(0,-1,0); c.push(rgb[0],rgb[1],rgb[2]); }
+  idx.push(b0,b0+1,b0+2, b0,b0+2,b0+3);
+  return {positions:p,normals:n,colors:c,indices:idx};
+}
+function cylinder(rad,height,segments,rgb,top){
+  const p=[],n=[],c=[],idx=[];
+  const h2=height/2;
+  for(let i=0;i<segments;i++){
+    const a0=i/segments*Math.PI*2, a1=(i+1)/segments*Math.PI*2;
+    const x0=Math.cos(a0)*rad,z0=Math.sin(a0)*rad;
+    const x1=Math.cos(a1)*rad,z1=Math.sin(a1)*rad;
+    const bi=p.length/3;
+    p.push(x0,-h2,z0, x1,-h2,z1, x1,h2,z1, x0,h2,z0);
+    for(let j=0;j<4;j++){ n.push(Math.cos((a0+a1)/2),0,Math.sin((a0+a1)/2)); c.push(rgb[0],rgb[1],rgb[2]); }
+    idx.push(bi,bi+1,bi+2, bi,bi+2,bi+3);
+  }
+  if(top){
+    const ci=p.length/3;
+    p.push(0,h2,0); n.push(0,1,0); c.push(rgb[0],rgb[1],rgb[2]);
+    for(let i=0;i<segments;i++){ const a0=i/segments*Math.PI*2; p.push(Math.cos(a0)*rad,h2,Math.sin(a0)*rad); n.push(0,1,0); c.push(rgb[0],rgb[1],rgb[2]); }
+    for(let i=1;i<=segments;i++){ idx.push(ci, ci+(i%segments)+1, ci+((i-1)%segments)+1); }
+  }
+  return {positions:p,normals:n,colors:c,indices:idx};
+}
+function sphereVerts(rad,rings,segs,rgb){
+  const p=[],n=[],c=[],idx=[];
+  for(let r=0;r<=rings;r++){
+    const phi=r/rings*Math.PI;
+    for(let s=0;s<=segs;s++){
+      const th=s/segs*Math.PI*2;
+      const x=rad*Math.sin(phi)*Math.cos(th), y=rad*Math.cos(phi), z=rad*Math.sin(phi)*Math.sin(th);
+      p.push(x,y,z); const l=Math.hypot(x,y,z)||1; n.push(x/l,y/l,z/l); c.push(rgb[0],rgb[1],rgb[2]);
+    }
+  }
+  for(let r=0;r<rings;r++)for(let s=0;s<segs;s++){
+    const a=r*(segs+1)+s, b=a+segs+1;
+    idx.push(a,b,a+1, b,b+1,a+1);
+  }
+  return {positions:p,normals:n,colors:c,indices:idx};
+}
+
+function makeMesh(prim){ return {draws:[{matrix:M4.identity(),...prim,mode:gl.TRIANGLES}]}; }
+
+/* ---------------- KAMERA ---------------- */
+let cam={yaw:0.6, pitch:0.5, dist:16, target:[0,0.5,0]};
+function cameraMatrix(){
+  const ex=cam.target[0]+cam.dist*Math.cos(cam.pitch)*Math.sin(cam.yaw);
+  const ey=cam.target[1]+cam.dist*Math.sin(cam.pitch);
+  const ez=cam.target[2]+cam.dist*Math.cos(cam.pitch)*Math.cos(cam.yaw);
+  return M4.lookAt([ex,ey,ez],cam.target,[0,1,0]);
+}
+
+/* ---------------- DÜNYA RENDER ---------------- */
+function drawWorld(vp){
+  // zemin kareleri
+  for(let i=0;i<19;i++)for(let j=0;j<19;j++){
+    const x=-6.5+i, z=-6.5+j;
+    const onPath=isOnPath(x,z,0.9);
+    const row=(i+j)%2;
+    let rgb=onPath?[0.82,0.72,0.55]:(row?[0.52,0.72,0.53]:[0.48,0.68,0.49]);
+    if(isSpot(x,z)){ rgb=state.selected?[0.5,0.85,0.55]:[0.6,0.78,0.55]; }
+    const b=box(1,0.12,1,rgb);
+    drawMesh(vp, b.positions, b.normals, b.colors, b.indices);
+  }
+  // kristalin halka duvarları
+  for(const w of state.walls){
+    const col=w.hp/w.max;
+    const rgb=col>0.6?[0.75,0.9,0.85]:col>0.3?[0.9,0.8,0.5]:[0.85,0.5,0.45];
+    const cyl=cylinder(w.r,0.35,28,rgb,false);
+    drawMesh(vp, cyl.positions, cyl.normals, cyl.colors, cyl.indices);
+  }
+  // kristal (merkez)
+  const core=sphereVerts(state.core.hp/state.core.max*0.5+0.4,12,20,[0.35,0.85,0.95]);
+  const mCore=M4.translate(M4.identity(),0,0.6+0.18*Math.sin(state.time*2),0);
+  drawMesh(M4.multiply(vp,mCore), core.positions, core.normals, core.colors, core.indices);
+  // kuleler
+  for(const sp of state.spots){
+    if(sp.tower) drawTower(vp,sp);
+  }
+  // düşmanlar
+  for(const e of state.enemies) drawEnemy(vp,e);
+  // mermiler
+  for(const pr of state.projectiles){
+    const s=sphereVerts(0.12,6,8,[1,0.9,0.4]);
+    const pm=M4.translate(M4.identity(),pr.x,pr.y,pr.z);
+    drawMesh(M4.multiply(vp,pm), s.positions,s.normals,s.colors,s.indices);
+  }
+  // etkiler (patlama halkaları)
+  for(const fx of state.effects){
+    const c=fx.r>0.5?[1,0.7,0.4]:[0.7,0.9,1.0];
+    const cyl=cylinder(fx.r, 0.12, 16, c,false);
+    const fm=M4.translate(M4.identity(),fx.x,0.1,fx.z);
+    drawMesh(M4.multiply(vp,fm), cyl.positions,cyl.normals,cyl.colors,cyl.indices);
+  }
+}
+
+function isOnPath(x,z,tol){
+  for(let i=0;i<PATH.length-1;i++){
+    const a=PATH[i],b=PATH[i+1];
+    const dx=b.x-a.x,dz=b.z-a.z;
+    const len2=dx*dx+dz*dz; if(len2<0.01)continue;
+    let t=((x-a.x)*dx+(z-a.z)*dz)/len2; t=Math.max(0,Math.min(1,t));
+    const px=a.x+t*dx, pz=a.z+t*dz;
+    if(Math.hypot(x-px,z-pz)<=tol) return true;
+  }
+  return false;
+}
+function isSpot(x,z){ return state.spots.some(s=>Math.hypot(s.x-x,s.z-z)<0.5); }
+
+function drawTower(vp,sp){
+  const t=sp.tower; const m=M4.translate(M4.identity(),sp.x,0.6,sp.z);
+  const c=TOWERS[t.type].color;
+  if(t.type==='archer'){
+    const body=cylinder(0.32,0.8,10,c,false);
+    const top=cylinder(0.42,0.3,10,c,true);
+    const bp=box(0.5,0.1,0.5,[0.55,0.42,0.3]);
+    drawMesh(M4.multiply(vp,m), body.positions,body.normals,body.colors,body.indices);
+    drawMesh(M4.multiply(vp,M4.translate(m,0,0.55,0)), top.positions,top.normals,top.colors,top.indices);
+    drawMesh(M4.multiply(vp,M4.translate(m,0,-0.42,0)), bp.positions,bp.normals,bp.colors,bp.indices);
+    if(t.level>=2){ const hd=sphereVerts(0.18,8,10,[0.95,0.9,0.7]); drawMesh(M4.multiply(vp,M4.translate(m,0,0.9,0)), hd.positions,hd.normals,hd.colors,hd.indices); }
+  } else if(t.type==='cannon'){
+    const base=cylinder(0.36,0.4,10,c,true);
+    const barrel=prismaticPyramid(0.3,0.3,0.7,[0.35,0.32,0.3]);
+    drawMesh(M4.multiply(vp,m), base.positions,base.normals,base.colors,base.indices);
+    drawMesh(M4.multiply(vp,M4.translate(m,0,0.45,0)), barrel.positions,barrel.normals,barrel.colors,barrel.indices);
+  } else { // frost
+    const base=cylinder(0.34,0.7,10,c,false);
+    const gem=prismaticPyramid(0.4,0.4,0.7,[0.5,0.75,0.95]);
+    drawMesh(M4.multiply(vp,m), base.positions,base.normals,base.colors,base.indices);
+    drawMesh(M4.multiply(vp,M4.translate(m,0,0.6,0)), gem.positions,gem.normals,gem.colors,gem.indices);
+  }
+}
+function drawEnemy(vp,e){
+  const b=box(0.55,0.8,0.55,e.color);
+  const m=M4.translate(M4.identity(),e.x,e.y+0.35,e.z);
+  drawMesh(M4.multiply(vp,m), b.positions,b.normals,b.colors,b.indices);
+}
+
+/* ---------------- OYUN MANTIĞI ---------------- */
+function pathPos(t){
+  const total=PATH.length-1;
+  const seg=Math.min(total* t, total-0.0001);
+  const i=Math.floor(seg);
+  const tt=seg-i;
+  const a=PATH[i], b=PATH[i+1];
+  return {x:a.x+(b.x-a.x)*tt, z:a.z+(b.z-a.z)*tt};
+}
+function spawnEnemy(wave){
+  const hp=30+wave*10;
+  let color=[0.6,0.35,0.4];
+  if(wave%3===0){ color=[0.35,0.5,0.75]; } // tank
+  const sp={ x:PATH[0].x, z:PATH[0].z, y:0.35, t:0, hp, max:hp, speed:0.6+wave*0.04, color };
+  state.enemies.push(sp);
+}
+
+function startWave(){
+  const w=state.wave; // 0-tabanlı
+  const count=4+Math.floor(w*1.8);
+  const queue=[];
+  for(let i=0;i<count;i++) queue.push(w);
+  state.spawnQueue=queue; state.spawnTimer=0;
+  state.waveActive=true;
+}
+
+function update(dt){
+  if(state.gameOver)return;
+  state.time+=dt;
+  // dalga arası bekle
+  if(!state.waveActive){
+    state.interWaveTimer-=dt;
+    if(state.interWaveTimer<=0 && state.spawnQueue===null && state.enemies.length===0 && state.wave>0 && state.wave<state.totalWaves){
+      // otomatik yeni dalga başlatmıyoruz; buton bekleniyor
+    }
+    if(state.wave===0 && state.enemies.length===0 && !state.waveActive){
+      // ilk başlangıç bekle — butondan
+    }
+    // oyun kazanma kontrolü
+    checkWin();
+    return;
+  }
+  // yumurtlama
+  if(state.spawnQueue && state.spawnQueue.length){
+    state.spawnTimer-=dt;
+    if(state.spawnTimer<=0){
+      state.spawnQueue.shift();
+      spawnEnemy(state.wave);
+      state.spawnTimer=0.9;
+    }
+  }
+  // düşman hareketi
+  for(const e of state.enemies){
+    e.t += (e.speed*(e.slow||1))*dt;
+    if(e.t>=1){ e.t=1; }
+    const p=pathPos(e.t); e.x=p.x; e.z=p.z; e.y=0.35;
+  }
+  // düşmanlar kristale ulaştı mı
+  for(let i=state.enemies.length-1;i>=0;i--){
+    const e=state.enemies[i];
+    if(e.t>=1){
+      // kristal duvar hasarı (en içteki ayakta olan halka)
+      let dmg=6;
+      const wl=state.walls.filter(w=>w.hp>0).sort((a,b)=>a.r-b.r)[0];
+      if(wl){ wl.hp-=dmg; if(wl.hp<=0){ state.core.hp-=18; } }
+      else { state.core.hp-=dmg; }
+      state.enemies.splice(i,1);
+    }
+  }
+  if(state.core.hp<=0){ state.core.hp=0; endGame(false); return; }
+  // kuleler ateş eder
+  fireTowers(dt);
+  // mermiler
+  updateProjectiles(dt);
+  // etkiler
+  for(let i=state.effects.length-1;i>=0;i--){ state.effects[i].life-=dt; if(state.effects[i].life<=0)state.effects.splice(i,1); }
+
+  // dalga bitti mi
+  if(state.waveActive && state.spawnQueue && state.spawnQueue.length===0 && state.enemies.length===0){
+    state.waveActive=false;
+    state.wave++;
+    state.gold+=20+state.wave*5;
+    if(state.wave>=state.totalWaves){ endGame(true); }
+    else { toast(`Dalga ${state.wave} bitti. +${20+state.wave*5} 🪙`); updateShop(); updateHUD(); }
+  }
+  checkWin();
+  updateHUD();
+}
+
+function fireTowers(dt){
+  for(const sp of state.spots){
+    const t=sp.tower; if(!t)continue;
+    const spec=TOWERS[t.type];
+    t.cd=(t.cd||0)-dt;
+    if(t.cd>0)continue;
+    const target=pickTarget(sp,spec.range);
+    if(!target)continue;
+    t.cd=1/spec.rate;
+    const rate=1/spec.rate;
+    if(t.type==='archer'){
+      state.projectiles.push({x:sp.x,y:0.9,z:sp.z,tx:target.x,ty:target.y,tz:target.z,target,
+        speed:9,age:0,type:'archer',dmg:spec.dmg+(t.level>1?spec.dmgUp:0)});
+    } else if(t.type==='cannon'){
+      state.projectiles.push({x:sp.x,y:0.7,z:sp.z,tx:target.x,ty:target.y,tz:target.z,target,
+        speed:6,age:0,type:'cannon',dmg:spec.dmg+(t.level>1?spec.dmgUp:0),splash:spec.splash});
+    } else {
+      state.projectiles.push({x:sp.x,y:0.8,z:sp.z,tx:target.x,ty:target.y,tz:target.z,target,
+        speed:7,age:0,type:'frost',slow:spec.slow});
+    }
+  }
+}
+function pickTarget(sp,range){
+  let best=null,bestT=-1;
+  for(const e of state.enemies){
+    const d=Math.hypot(e.x-sp.x,e.z-sp.z);
+    if(d<=range && e.t>bestT){ bestT=e.t; best=e; }
+  }
+  return best;
+}
+function updateProjectiles(dt){
+  for(let i=state.projectiles.length-1;i>=0;i--){
+    const pr=state.projectiles[i];
+    pr.age+=dt;
+    const dx=pr.tx-pr.x, dy=pr.ty-pr.y, dz=pr.tz-pr.z;
+    const d=Math.hypot(dx,dy,dz);
+    const step=pr.speed*dt;
+    if(d<=step || pr.age>2){
+      // vuruldu
+      hit(pr);
+      state.projectiles.splice(i,1);
+      continue;
+    }
+    pr.x+=dx/d*step; pr.y+=dy/d*step; pr.z+=dz/d*step;
+    // hedef takibi
+    if(pr.target && state.enemies.includes(pr.target)){
+      pr.tx=pr.target.x; pr.ty=pr.target.y; pr.tz=pr.target.z;
+    } else { pr.target=null; }
+  }
+}
+function hit(pr){
+  if(pr.type==='archer'){
+    if(pr.target && state.enemies.includes(pr.target)){
+      pr.target.hp-=pr.dmg;
+      if(pr.target.hp<=0){ killEnemy(pr.target); }
+    }
+  } else if(pr.type==='cannon'){
+    const cx=pr.tx,cz=pr.tz;
+    state.effects.push({x:pr.tx,z:pr.tz,life:0.3,r:pr.splash});
+    for(let i=state.enemies.length-1;i>=0;i--){
+      const e=state.enemies[i];
+      if(Math.hypot(e.x-cx,e.z-cz)<=pr.splash){
+        e.hp-=pr.dmg;
+        if(e.hp<=0)killEnemy(e);
+      }
+    }
+  } else { // frost
+    const cx=pr.tx,cz=pr.tz;
+    state.effects.push({x:pr.tx,z:pr.tz,life:0.3,r:0.1});
+    for(const e of state.enemies){
+      if(Math.hypot(e.x-cx,e.z-cz)<=1.1){ e.slow=pr.slow; }
+    }
+  }
+}
+function killEnemy(e){
+  const i=state.enemies.indexOf(e); if(i>=0)state.enemies.splice(i,1);
+  state.kills++; state.gold+=KILL_REWARD;
+}
+
+function endGame(win){
+  if(state.gameOver)return;
+  state.gameOver=true; state.won=win;
+  const w=win?document.getElementById('winScreen'):document.getElementById('loseScreen');
+  w.classList.remove('hidden');
+  const txt=win?document.getElementById('winText'):document.getElementById('loseText');
+  if(win) txt.textContent=`${state.totalWaves} dalgayı ${state.kills} düşmanla, kristal ${Math.round(state.core.hp)} canla atlattın. Kalan altın: ${state.gold}.`;
+  else txt.textContent=`Kristal ${Math.round(state.core.hp)} cana düştüğünde kırıldı. ${state.kills} düşmanı durdurmuştun.`;
+}
+function checkWin(){
+  if(!state.waveActive && state.wave>=state.totalWaves && !state.gameOver){
+    endGame(true);
+  }
+}
+
+/* ---------------- KULE YERLEŞTİRME ---------------- */
+function validSpot(sp,type){
+  if(sp.tower) return false;
+  if(state.gold < (sp.tower?0:TOWERS[type].cost)) return false;
+  return true;
+}
+function handlePlacement(sp){
+  if(!state.selected)return;
+  const spec=TOWERS[state.selected];
+  if(sp.tower){
+    // yükseltme
+    if(sp.tower.type!==state.selected)return;
+    if(state.gold<spec.upgradeCost) { toast('Yetersiz altın!'); return; }
+    state.gold-=spec.upgradeCost; sp.tower.level++;
+    toast(`${spec.name} Seviye ${sp.tower.level}`);
+  } else if(state.gold>=spec.cost){
+    state.gold-=spec.cost;
+    sp.tower={ type:state.selected, level:1, cd:0 };
+    toast(`${spec.name} inşa edildi`);
+    // seçimi koru
+  } else { toast('Yetersiz altın!'); }
+  updateShop(); updateHUD();
+}
+window.hotkeys=null;
+
+/* ---------------- HUD / SHOP ---------------- */
+function updateHUD(){
+  document.getElementById('coreLife').textContent='💎 '+Math.round(state.core.hp);
+  document.getElementById('gold').textContent=state.gold;
+  document.getElementById('kills').textContent=state.kills;
+  const w=state.waveActive?`Dalga ${Math.min(state.wave+1,state.totalWaves)}/${state.totalWaves}`:
+    state.wave>=state.totalWaves?`Tüm dalgalar bitti`:`Dalga ${Math.min(state.wave+1,state.totalWaves)}/${state.totalWaves} — Tur`;
+  document.getElementById('waveText').textContent=w;
+}
+function updateShop(){
+  const s=document.getElementById('shop'); s.innerHTML='';
+  for(const key in TOWERS){
+    const spec=TOWERS[key];
+    const div=document.createElement('div');
+    div.className='shopCard'+(state.selected===key?' selected':'');
+    div.innerHTML=`<div class="ico">${spec.ico}</div><div class="nm">${spec.name}</div><div class="pr">${spec.cost} 🪙</div>`;
+    div.onclick=()=>{ toggleSelect(key); };
+    s.appendChild(div);
+  }
+}
+function toggleSelect(key){
+  if(state.selected===key){ state.selected=null; toast('Seçim iptal'); }
+  else { state.selected=key; toast(`${TOWERS[key].name} seçildi — yoldaki yeşil yuvaya tıkla`); }
+  updateShop();
+  updateHUD();
+}
+function toast(msg,ms=2200){
+  const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
+  clearTimeout(toast._h); toast._h=setTimeout(()=>t.classList.remove('show'),ms);
+}
+
+/* ---------------- İNPUT ---------------- */
+let dragging=false,lastX=0,lastY=0;
+canvas.addEventListener('mousedown',e=>{ dragging=true; lastX=e.clientX; lastY=e.clientY; canvas.classList.add('grabbing'); });
+window.addEventListener('mousemove',e=>{
+  if(!dragging)return;
+  const dx=e.clientX-lastX,dy=e.clientY-lastY; lastX=e.clientX; lastY=e.clientY;
+  cam.yaw-=dx*0.008;
+  cam.pitch=Math.max(0.1,Math.min(1.3,cam.pitch+dy*0.006));
+});
+window.addEventListener('mouseup',()=>{ dragging=false; canvas.classList.remove('grabbing'); });
+canvas.addEventListener('wheel',e=>{
+  e.preventDefault();
+  cam.dist=Math.max(7,Math.min(30,cam.dist+e.deltaY*0.01));
+},{passive:false});
+
+// tıkla -> kule yerleştir (kamera yörünge raycast)
+function clickForPlacement(clientX,clientY){
+  if(!state.selected)return;
+  const w=gl.canvas.clientWidth||canvas.clientWidth, h=gl.canvas.clientHeight||canvas.clientHeight;
+  const aspect=w/h;
+  const proj=M4.perspective(0.8,aspect,0.1,200);
+  const camMat=cameraMatrix();
+  const vp=M4.multiply(proj,camMat);
+  let best=null,bestD=1e9;
+  for(const sp of state.spots){
+    const p=M4.transform(vp,[sp.x,0.4,sp.z,1]);
+    if(p[3]===0)continue;
+    const sx=(p[0]/p[3]*0.5+0.5)*w;
+    const sy=(1-(p[1]/p[3]*0.5+0.5))*h;
+    const d=Math.hypot(sx-clientX,sy-clientY);
+    if(d<0.05*Math.max(w,h) && d<bestD){ bestD=d; best=sp; }
+  }
+  if(best){ handlePlacement(best); }
+  else { toast('Boş bir kule yuvasına tıkla'); }
+}
+canvas.addEventListener('click',e=>{ clickForPlacement(e.clientX,e.clientY); });
+
+/* ---------------- OLUŞTURMA / BAŞLAT ---------------- */
+document.getElementById('btnStart').onclick=()=>{
+  document.getElementById('startScreen').classList.add('hidden');
+  updateShop(); updateHUD();
+  toast('Savunmayı kur! Bir kule seç ve yuvaya yerleştir.');
+};
+document.getElementById('btnRestart').onclick=restart;
+document.getElementById('btnRestartLose').onclick=restart;
+function restart(){
+  state=newState(); state.spots=SPOTS;
+  document.getElementById('winScreen').classList.add('hidden');
+  document.getElementById('loseScreen').classList.add('hidden');
+  updateShop(); updateHUD();
+  // dalga başlat butonunu HUD'a ekleyelim (shop'a)
+  ensureWaveButton();
+}
+function ensureWaveButton(){
+  const s=document.getElementById('shop');
+  if(!document.getElementById('btnWave')){
+    const d=document.createElement('div');
+    d.className='shopCard'; d.id='btnWave';
+    d.innerHTML='<div class="ico">⚔️</div><div class="nm">Tur</div><div class="pr">Başlat</div>';
+    d.onclick=()=>{ if(!state.waveActive && !state.gameOver && state.wave<state.totalWaves){ startWave(); toast('Tufan geliyor!'); } };
+    s.appendChild(d);
+  }
+}
+
+/* ---------------- ANA DÖNGÜ ---------------- */
+function renderFrame(){
+  gl.clearColor(0.78,0.86,0.8,1); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  const aspect=(gl.canvas.clientWidth||1)/(gl.canvas.clientHeight||1);
+  const proj=M4.perspective(0.8,aspect,0.1,200);
+  const view=cameraMatrix();
+  const vp=M4.multiply(proj,view);
+  gl.uniform3f(loc.light,0.4,0.9,0.6);
+  drawWorld(vp);
+}
+let last=performance.now();
+function loop(now){
+  const dt=Math.min(0.05,(now-last)/1000); last=now;
+  update(dt);
+  renderFrame();
+  requestAnimationFrame(loop);
+}
+ensureWaveButton();
+updateShop(); updateHUD();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

@@ -1,0 +1,42 @@
+# Bağımlılıklar
+node_modules
+.pnp
+.pnp.js
+
+# Next.js
+.next
+out
+*.tsbuildinfo
+next-env.d.ts
+
+# Build çıktıları
+dist
+build
+
+# Ortam değişkenleri (şifre/anahtar içerir)
+.env
+.env.*
+!.env.example
+
+# Veritabanı
+prisma/*.db
+prisma/*.db-journal
+*.db
+*.db-journal
+
+# Yüklenen dosyalar
+public/uploads
+
+# Eski / alakasız çalışma dosyaları
+/dublaj
+
+# Loglar
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# İşletim sistemi
+Thumbs.db
+desktop.ini
+.DS_Store
